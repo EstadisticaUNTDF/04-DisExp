@@ -1,0 +1,188 @@
+---
+title: "Problemas ANOVA Diseño Experimental"
+author: "Luciano Selzer"
+date: "21 de agosto de 2015"
+output: 
+  word_document:
+    fig_width: 6
+    fig_height: 6
+    fig_caption: true
+---
+
+
+```{r setup, include=FALSE}
+# Setup -------------------------------------------------------------------
+library(pander)
+library(xlsx)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(lsmeans)
+library(reshape2)
+library(magrittr)
+library(nortest) #normality test
+library(car)
+library(pwr)
+library(agricolae)
+library(compute.es)
+library(knitr)
+library(tidyr)
+library(additivityTests)
+# opts --------------------------------------------------------------------
+
+source("../src/opts.R")
+
+# Functions ---------------------------------------------------------------
+
+source("../src/functions.R")
+
+```
+
+## Ejemplo
+
+```{r ej}
+fert <- read.xlsx("../data/bloques.xlsx", sheetIndex = 3)
+tukey.test(as.matrix(fert[, -1]))
+fert <- melt(fert, measure.vars = 2:4, variable.name = "fertilizante", value.name = "produccion")
+fert %<>% transform(Finca = as.factor(Finca))
+fert <- na.exclude(fert)
+
+set.caption("Tabla 1.1 -- Medias, varianzas y desvios estándar por grupo")
+pander(ddply(fert, .(fertilizante), summarise, 
+             mean = mean(produccion),
+             var = var(produccion),
+             sd = sd(produccion)))
+pander(ddply(fert, .(Finca), summarise, 
+             mean = mean(produccion),
+             var = var(produccion),
+             sd = sd(produccion)))
+
+pander(bartlett.test(produccion ~ fertilizante, 
+                     data = fert))
+pander(leveneTest(produccion ~ fertilizante, data = fert))
+
+fert_aov <- aov(produccion ~ fertilizante + Finca, data = fert)
+pander(fert_aov)
+fert_lsm <- lsmeans(fert_aov, ~ fertilizante)
+pander(cld(fert_lsm))
+```
+
+```{r ej_plot, fig.width=4, fig.height=3, fig.cap="Perfiles"}
+ggplot(fert, aes(Finca, produccion)) +
+  geom_line(aes(group = fertilizante, linetype = fertilizante))
+```
+
+
+## Problema 1
+
+Se estudia mediante un diseño de bloques al azar el efecto de una hormona de crecimiento sobre ratas jóvenes. Se prueba una dosis débil (tratamiento A), una dosis fuerte (tratamiento B) y un tercer tratamiento, que sería el testigo, consistente en la aplicación de un placebo. Se toman 6 camadas de ratas al azar, también al azar se seleccionan tres animales de cada una. Se asignan los tratamientos al azar dentro de cada camada y al cabo de 15 días se mide el aumento en peso, en decigramos, con los siguientes resultados:
+
+```{r}
+ratas <- read.xlsx("../data/bloques.xlsx", sheetIndex = 1)
+ratas %>% setNames(c("Tratamiento", 1:6)) %>% 
+pander()
+```
+
+a)	Estudiar la aditividad del modelo (validez del modelo).
+```{r 1}
+
+tukey.test(as.matrix(ratas[, -1]))
+ratas <- melt(ratas, measure.vars = 2:7, variable.name = "camada", value.name = "aumento_peso")
+ratas <- na.exclude(ratas)
+
+set.caption("Tabla 1.1 -- Medias, varianzas y desvios estándar por grupo")
+pander(ddply(ratas, .(tratamiento), summarise, 
+             mean = mean(aumento_peso),
+             var = var(aumento_peso),
+             sd = sd(aumento_peso)))
+
+pander(bartlett.test(aumento_peso ~ tratamiento, 
+                     data = ratas))
+pander(leveneTest(aumento_peso ~ tratamiento, data = ratas))
+```
+### Transformación logaritmo
+
+```{r 1_log}
+ratas %<>% transform(log_aumento_peso = log1p(aumento_peso))
+
+#Tukey additivity test
+ratas %>% 
+  select(tratamiento, camada, log_aumento_peso) %>%
+  spread(tratamiento, log_aumento_peso) %>% 
+  select(-camada) %>% 
+  as.matrix %>% 
+  tukey.test()
+
+set.caption("Tabla 1.2 -- Medias, varianzas y desvios estándar por grupo con la transformación log(x+1)")
+pander(ddply(ratas, .(tratamiento), summarise, 
+             mean = mean(log_aumento_peso),
+             var = var(log_aumento_peso),
+             sd = sd(log_aumento_peso)))
+
+pander(bartlett.test(log_aumento_peso ~ tratamiento, 
+                     data = ratas))
+pander(leveneTest(log_aumento_peso ~ tratamiento, data = ratas))
+```
+
+b)	Poner a prueba la efectividad de la hormona.
+
+```{r}
+ratas_aov <- aov(log_aumento_peso ~ tratamiento + camada, data = ratas)
+pander(ratas_aov)
+```
+
+
+c)	Realizar contrastes múltiples, si corresponde.
+
+```{r 1_log_plot, fig.width=4, fig.height=3, fig.cap="Perfiles"}
+ggplot(ratas, aes(camada, log_aumento_peso)) +
+  geom_line(aes(group = tratamiento, linetype = tratamiento)) +
+  scale_x_discrete(labels = 1:6)
+```
+
+```{r}
+ratas_lsm <- lsmeans(ratas_aov, ~ tratamiento)
+pander(cld(ratas_lsm))
+```
+
+## Problema 2
+
+Un investigador estudia los efectos de tres dietas experimentales con variado contenido de grasas sobre el nivel total de lípidos en el plasma. El nivel total de lípidos en el plasma es utilizado como un indicador de posibles enfermedades coronarias. Quince hombres de peso corporal (unos Adonis) ideal fueron agrupados en 5 bloques de acuerdo a la edad. Dentro de cada bloque las dietas fueron asignadas al azar a los tres sujetos. La tabla presenta los datos correspondientes a la reducción en el nivel de lípidos (gr/l) después de que los individuos fueron sometidos a la dieta durante un período de tiempo fijo:
+
+```{r}
+lipidos <- read.xlsx("../data/bloques.xlsx", sheetIndex = 2, encoding = "UTF-8")
+pander(lipidos)
+```
+
+
+a)	¿Por qué la edad fue usada como una variable de bloque?
+b)	Realice la prueba de Tukey, ¿cuáles son sus conclusiones? (trabaje con = 0.05 y = 0.01)
+
+```{r}
+tukey.test(as.matrix(lipidos[, -1]))
+```
+
+Asumiendo que un diseño en bloques al azar es el adecuado
+c)	Obtenga la tabla de ANOVA
+```{r}
+lipidos <- melt(lipidos, measure.vars = 2:4, variable.name = "dieta", value.name = "reduccion")
+lipidos <- na.exclude(lipidos)
+lipidos_aov <- aov(reduccion ~ dieta + Bloque, data = lipidos)
+pander(lipidos_aov)
+```
+
+
+d)	Estime $D_1 =  \mu_1- \mu_2 $ y $D_2 =  \mu_2 - \mu_3  $ 3, usando un intervalo de confianza de Bonferroni
+```{r 2}
+# Poner los coeficientes de los contrastes separados por comas.
+contrastres <- list(c1 = c(),
+                    c2 = c())
+lipidos_lsm <- lsmeans(lipidos_aov, ~ dieta)
+pander(confint(contrast(lipidos_lsm, contrastes), 
+                        adjust = "bonf"))
+```
+e)	En este experimento no fue usada una dieta estándar como control. ¿Que tipo de justificación puede haber tenido el investigador para no incluir un tratamiento testigo con fines comparativos?
+
+
+
+

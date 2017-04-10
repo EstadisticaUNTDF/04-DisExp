@@ -145,6 +145,15 @@ ratas_lsm <- lsmeans(ratas_aov, ~ tratamiento)
 pander(cld(ratas_lsm))
 ```
 
+d) ¿Qué sucede si omitimos el factor bloque? ¿A donde fue a parar toda la 
+variabilidad debida a los bloques?
+
+```{r}
+ratas_aov <- aov(log_aumento_peso ~ tratamiento, data = ratas)
+pander(ratas_aov)
+```
+
+
 ## Problema 2
 
 Un investigador estudia los efectos de tres dietas experimentales con variado contenido de grasas sobre el nivel total de lípidos en el plasma. El nivel total de lípidos en el plasma es utilizado como un indicador de posibles enfermedades coronarias. Quince hombres de peso corporal (unos Adonis) ideal fueron agrupados en 5 bloques de acuerdo a la edad. Dentro de cada bloque las dietas fueron asignadas al azar a los tres sujetos. La tabla presenta los datos correspondientes a la reducción en el nivel de lípidos (gr/l) después de que los individuos fueron sometidos a la dieta durante un período de tiempo fijo:
